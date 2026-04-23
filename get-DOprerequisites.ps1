@@ -1,4 +1,4 @@
-&lt;#
+<#
 .SYNOPSIS
     Checks prerequisites for Delivery Optimization on a Windows machine.
 
@@ -35,7 +35,7 @@
         on machines with no active DO cache, which is not necessarily an error.
       - MCC reachability test uses Test-NetConnection; system default timeout applies (~5s).
       - Proxy detection reads static WinHTTP config; PAC/WPAD scripts are not evaluated.
-#&gt;
+#>
 
 # Initialize output variable -- results are appended as comma-separated tokens
 $Output = ""
