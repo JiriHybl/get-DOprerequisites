@@ -21,7 +21,7 @@
 
 .NOTES
     Author  : JiriHybl
-    Version : 1.2
+    Version : 1.3
     Date    : 2025
 
     Exit codes:
@@ -307,6 +307,9 @@ else {
 # ---------------------------------------------------------------------------
 # Check Reachability of Required Delivery Optimization Cloud Endpoints
 # Tests HTTP connectivity to Microsoft DO service URLs.
+# Any HTTP response (including 4xx/5xx) is treated as reachable -- it proves
+# the endpoint is accessible on the network. Only connection-level failures
+# (DNS errors, TCP timeouts, no response) are reported as unreachable.
 # All result tokens include a trailing comma for consistent output parsing.
 # ---------------------------------------------------------------------------
 $requiredUrls = @(
@@ -319,22 +322,22 @@ $requiredUrls = @(
 foreach ($url in $requiredUrls) {
     try {
         $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop
-        if ($null -ne $response) {
-            $Status = $response.StatusCode
-            if ($Status -eq 200) {
-                $Output += "Status200:$url,"
-            }
-        }
-        else {
-            $Output += "NullResponse:$url,"
-        }
+        # Any HTTP response means the endpoint is reachable
+        $Output += "Status$($response.StatusCode):$url,"
     }
     catch [System.Net.WebException] {
-        # Catches HTTP-level errors (e.g. 403, 407, 503) and includes the status code in output
-        $Output += $_.Exception.Response.StatusCode.ToString() + ":" + $url.ToString() + ","
+        if ($null -ne $_.Exception.Response) {
+            # Server returned an HTTP error (e.g. 401, 403, 404, 503) -- endpoint is reachable
+            $statusCode = [int]$_.Exception.Response.StatusCode
+            $Output += "Status${statusCode}:$url,"
+        }
+        else {
+            # No response at all -- DNS failure, TCP timeout, connection refused, etc.
+            $Output += "Unreachable:$url,"
+        }
     }
     catch {
-        # Catches all other exceptions (DNS failure, timeout, etc.)
+        # Any other exception with no HTTP response (e.g. TLS error before response)
         $Output += "GeneralException:$url,"
     }
 }
@@ -343,8 +346,6 @@ foreach ($url in $requiredUrls) {
 # Output Results
 # Exit 1 -- data was collected (expected path for detection/diagnostic scripts)
 # Exit 0 -- no data collected (unexpected; $Output was empty)
-# Both exit statements are inside their respective branches to prevent
-# exit 0 from overriding exit 1.
 # ---------------------------------------------------------------------------
 if ($Output.Length -gt 0) {
     Write-Output $Output
