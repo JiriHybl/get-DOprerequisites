@@ -22,7 +22,7 @@
 .NOTES
     Author  : JiriHybl
     Version : 1.3
-    Date    : 2025
+    Date    : 04-2026
 
     Exit codes:
       0 - One or more prerequisites are not met (triggers Intune remediation)
