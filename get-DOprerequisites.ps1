@@ -306,36 +306,64 @@ else {
 
 # ---------------------------------------------------------------------------
 # Check Reachability of Required Delivery Optimization Cloud Endpoints
-# Tests HTTP connectivity to Microsoft DO service URLs.
-# All result tokens include a trailing comma for consistent output parsing.
+#
+# Endpoints are tested per service category using specific instances
+# (wildcards are not testable directly). Source: Microsoft Learn
+# https://learn.microsoft.com/en-us/windows/deployment/do/delivery-optimization-workflow
+#
+# Two-stage test per endpoint:
+#   1. DNS resolution — distinguishes "hostname unknown" from HTTP-level failures.
+#      If DNS fails, HTTP is skipped and DNSFail is reported.
+#   2. HTTP request — any HTTP response (including 4xx) means the server was reached
+#      and is considered reachable. Only network-level failures with no HTTP response
+#      (timeout, connection refused) are reported as unreachable.
+#
+# Service categories and their purpose:
+#   Geo      (geo*.prod.do.dsp.mp.microsoft.com)  — device location / datacenter routing
+#   KeyValue (kv*.prod.do.dsp.mp.microsoft.com)   — bootstrap, provides all other endpoints
+#   Content  (cp*.prod.do.dsp.mp.microsoft.com)   — content policy and metadata URLs
+#   Discovery(disc*.prod.do.dsp.mp.microsoft.com) — peer matching / discovery
+#   CDN      (dl.delivery.mp.microsoft.com)        — content metadata file hosting
 # ---------------------------------------------------------------------------
 $requiredUrls = @(
-    "https://geover-prod.do.dsp.mp.microsoft.com",
-    "https://disc801.prod.do.dsp.mp.microsoft.com",
-    "http://dl.delivery.mp.microsoft.com/",
-    "https://geo.prod.do.dsp.mp.microsoft.com"
+    "https://geo.prod.do.dsp.mp.microsoft.com",       # Geo
+    "https://kv101.prod.do.dsp.mp.microsoft.com",     # KeyValue
+    "https://cp901.prod.do.dsp.mp.microsoft.com",     # Content Policy
+    "https://disc101.prod.do.dsp.mp.microsoft.com",   # Discovery
+    "http://dl.delivery.mp.microsoft.com/"            # CDN metadata (HTTP/80)
 )
 
 foreach ($url in $requiredUrls) {
+    # Extract hostname from URL for DNS pre-check
+    $hostname = ([System.Uri]$url).Host
+
+    # Stage 1: DNS resolution
     try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop
-        if ($null -ne $response) {
-            $Status = $response.StatusCode
-            if ($Status -eq 200) {
-                $Output += "Status200:$url,"
-            }
-        }
-        else {
-            $Output += "NullResponse:$url,"
-        }
-    }
-    catch [System.Net.WebException] {
-        # Catches HTTP-level errors (e.g. 403, 407, 503) and includes the status code in output
-        $Output += $_.Exception.Response.StatusCode.ToString() + ":" + $url.ToString() + ","
+        $null = [System.Net.Dns]::GetHostAddresses($hostname)
     }
     catch {
-        # Catches all other exceptions (DNS failure, timeout, etc.)
-        $Output += "GeneralException:$url,"
+        $Output += "DNSFail:$hostname,"
+        continue
+    }
+
+    # Stage 2: HTTP reachability — any HTTP response means the server was reached
+    try {
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop
+        $Output += "Reachable($($response.StatusCode)):$hostname,"
+    }
+    catch [System.Net.WebException] {
+        if ($null -ne $_.Exception.Response) {
+            # HTTP error response (4xx/5xx) — server was reached
+            $httpStatus = [int]$_.Exception.Response.StatusCode
+            $Output += "Reachable($httpStatus):$hostname,"
+        }
+        else {
+            # DNS resolved but no HTTP response — TCP/TLS level failure
+            $Output += "Unreachable($($_.Exception.Status)):$hostname,"
+        }
+    }
+    catch {
+        $Output += "Unreachable(Exception):$hostname,"
     }
 }
 
@@ -356,7 +384,8 @@ $issuePatterns = @(
     "DiskLow5GB",
     "Firewall7680NotOK",
     "Firewall5353NotOK",
-    "Unreachable:",
+    "Unreachable(",
+    "DNSFail:",
     "GeneralException:"
 )
 
