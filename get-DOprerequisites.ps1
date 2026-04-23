@@ -331,7 +331,11 @@ foreach ($url in $requiredUrls) {
     }
     catch [System.Net.WebException] {
         # Catches HTTP-level errors (e.g. 403, 407, 503) and includes the status code in output
-        $Output += $_.Exception.Response.StatusCode.ToString() + ":" + $url.ToString() + ","
+        if ($null -ne $_.Exception.Response) {
+            $Output += $_.Exception.Response.StatusCode.ToString() + ":" + $url.ToString() + ","
+        } else {
+            $Output += "WebException:$url,"
+        }
     }
     catch {
         # Catches all other exceptions (DNS failure, timeout, etc.)
